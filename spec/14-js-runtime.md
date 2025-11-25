@@ -399,9 +399,441 @@ window.addEventListener('DOMContentLoaded', () => {
 
 ---
 
+## FOCUS MANAGEMENT
+
+### Focus Operations
+
+```javascript
+// Add to ZuiRuntime object
+const ZuiRuntime = {
+    // ... existing fields ...
+
+    // Focus management
+    focusTrap: null,
+    lastFocusedElement: null,
+
+    // ... existing methods ...
+
+    // ============== FOCUS MANAGEMENT ==============
+
+    /**
+     * Focus an element by ID
+     */
+    focusElement(elementId) {
+        const element = this.getElement(elementId);
+        if (!element) {
+            console.warn(`Cannot focus element: ${elementId} not found`);
+            return false;
+        }
+
+        // Make element focusable if not already
+        if (!element.hasAttribute('tabindex') && !this.isFocusable(element)) {
+            element.setAttribute('tabindex', '-1');
+        }
+
+        element.focus();
+        return true;
+    },
+
+    /**
+     * Focus element by selector
+     */
+    focusSelector(selector) {
+        const element = document.querySelector(selector);
+        if (!element) {
+            console.warn(`Cannot focus selector: ${selector} not found`);
+            return false;
+        }
+
+        if (!element.hasAttribute('tabindex') && !this.isFocusable(element)) {
+            element.setAttribute('tabindex', '-1');
+        }
+
+        element.focus();
+        return true;
+    },
+
+    /**
+     * Check if element is naturally focusable
+     */
+    isFocusable(element) {
+        const focusableTags = ['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT'];
+        return focusableTags.includes(element.tagName);
+    },
+
+    /**
+     * Get currently focused element
+     */
+    getFocusedElement() {
+        const active = document.activeElement;
+        if (active === document.body) return null;
+        return active;
+    },
+
+    /**
+     * Save current focus
+     */
+    saveFocus() {
+        this.lastFocusedElement = this.getFocusedElement();
+    },
+
+    /**
+     * Restore previously saved focus
+     */
+    restoreFocus() {
+        if (this.lastFocusedElement) {
+            this.lastFocusedElement.focus();
+            this.lastFocusedElement = null;
+            return true;
+        }
+        return false;
+    },
+
+    /**
+     * Move focus to next focusable element
+     */
+    focusNext() {
+        const focusable = this.getFocusableElements();
+        const current = this.getFocusedElement();
+        const currentIndex = focusable.indexOf(current);
+
+        if (currentIndex < focusable.length - 1) {
+            focusable[currentIndex + 1].focus();
+            return true;
+        }
+        return false;
+    },
+
+    /**
+     * Move focus to previous focusable element
+     */
+    focusPrevious() {
+        const focusable = this.getFocusableElements();
+        const current = this.getFocusedElement();
+        const currentIndex = focusable.indexOf(current);
+
+        if (currentIndex > 0) {
+            focusable[currentIndex - 1].focus();
+            return true;
+        }
+        return false;
+    },
+
+    /**
+     * Get all focusable elements
+     */
+    getFocusableElements(container = document.body) {
+        const selector = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+                        'textarea:not([disabled]), select:not([disabled]), ' +
+                        '[tabindex]:not([tabindex="-1"])';
+
+        return Array.from(container.querySelectorAll(selector))
+            .filter(el => {
+                // Check visibility
+                const style = window.getComputedStyle(el);
+                return style.display !== 'none' &&
+                       style.visibility !== 'hidden' &&
+                       el.offsetParent !== null;
+            });
+    },
+
+    /**
+     * Install focus trap on container
+     */
+    installFocusTrap(containerId) {
+        const container = this.getElement(containerId);
+        if (!container) {
+            console.warn(`Cannot install focus trap: container ${containerId} not found`);
+            return false;
+        }
+
+        this.saveFocus();
+
+        const focusTrap = {
+            container,
+            handleKeyDown: (e) => {
+                if (e.key !== 'Tab') return;
+
+                const focusable = this.getFocusableElements(container);
+                if (focusable.length === 0) return;
+
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+
+                if (e.shiftKey) {
+                    // Shift + Tab: move backwards
+                    if (document.activeElement === first) {
+                        e.preventDefault();
+                        last.focus();
+                    }
+                } else {
+                    // Tab: move forwards
+                    if (document.activeElement === last) {
+                        e.preventDefault();
+                        first.focus();
+                    }
+                }
+            },
+        };
+
+        container.addEventListener('keydown', focusTrap.handleKeyDown);
+        this.focusTrap = focusTrap;
+
+        // Focus first element
+        const focusable = this.getFocusableElements(container);
+        if (focusable.length > 0) {
+            focusable[0].focus();
+        }
+
+        return true;
+    },
+
+    /**
+     * Remove focus trap
+     */
+    removeFocusTrap() {
+        if (!this.focusTrap) return false;
+
+        this.focusTrap.container.removeEventListener('keydown', this.focusTrap.handleKeyDown);
+        this.focusTrap = null;
+
+        this.restoreFocus();
+        return true;
+    },
+
+    // ... rest of existing methods ...
+};
+```
+
+### WASM Imports for Focus
+
+```javascript
+// Add to createImports() method
+createImports() {
+    return {
+        zui: {
+            // ... existing imports ...
+
+            // Focus management
+            js_focusElement: (elementId) => {
+                return this.focusElement(elementId) ? 1 : 0;
+            },
+
+            js_focusSelector: (selectorPtr, selectorLen) => {
+                const selector = this.ptrToStr(selectorPtr, selectorLen);
+                return this.focusSelector(selector) ? 1 : 0;
+            },
+
+            js_saveFocus: () => {
+                this.saveFocus();
+            },
+
+            js_restoreFocus: () => {
+                return this.restoreFocus() ? 1 : 0;
+            },
+
+            js_focusNext: () => {
+                return this.focusNext() ? 1 : 0;
+            },
+
+            js_focusPrevious: () => {
+                return this.focusPrevious() ? 1 : 0;
+            },
+
+            js_installFocusTrap: (containerId) => {
+                return this.installFocusTrap(containerId) ? 1 : 0;
+            },
+
+            js_removeFocusTrap: () => {
+                return this.removeFocusTrap() ? 1 : 0;
+            },
+        },
+    };
+},
+```
+
+### Zig Integration
+
+```zig
+// src/effects/focus.zig
+const std = @import("std");
+
+// WASM imports for focus management
+extern "zui" fn js_focusElement(element_id: u32) bool;
+extern "zui" fn js_focusSelector(selector_ptr: [*]const u8, selector_len: usize) bool;
+extern "zui" fn js_saveFocus() void;
+extern "zui" fn js_restoreFocus() bool;
+extern "zui" fn js_focusNext() bool;
+extern "zui" fn js_focusPrevious() bool;
+extern "zui" fn js_installFocusTrap(container_id: u32) bool;
+extern "zui" fn js_removeFocusTrap() bool;
+
+pub const Focus = struct {
+    /// Focus an element by ID
+    pub fn element(element_id: u32) void {
+        _ = js_focusElement(element_id);
+    }
+
+    /// Focus element by CSS selector
+    pub fn selector(sel: []const u8) void {
+        _ = js_focusSelector(sel.ptr, sel.len);
+    }
+
+    /// Save current focus
+    pub fn save() void {
+        js_saveFocus();
+    }
+
+    /// Restore saved focus
+    pub fn restore() bool {
+        return js_restoreFocus();
+    }
+
+    /// Move to next focusable element
+    pub fn next() bool {
+        return js_focusNext();
+    }
+
+    /// Move to previous focusable element
+    pub fn previous() bool {
+        return js_focusPrevious();
+    }
+
+    /// Install focus trap on container
+    pub fn trap(container_id: u32) bool {
+        return js_installFocusTrap(container_id);
+    }
+
+    /// Remove focus trap
+    pub fn untrap() bool {
+        return js_removeFocusTrap();
+    }
+};
+
+// Focus effect for Effects system
+pub fn Effect(comptime Msg: type) type {
+    return union(enum) {
+        // ... existing effects ...
+
+        /// Focus management effect
+        focus: union(enum) {
+            element: u32,
+            selector: []const u8,
+            save,
+            restore,
+            next,
+            previous,
+            trap: u32,
+            untrap,
+        },
+    };
+}
+```
+
+### Usage Examples
+
+```zig
+// Example 1: Focus element after mount
+pub fn update(model: *Model, msg: Msg, ctx: *AppContext) Effect(Msg) {
+    return switch (msg) {
+        .modal_opened => {
+            // Focus first input in modal
+            return Effect.focus(.{ .selector = "#modal input:first-child" });
+        },
+
+        // ... other cases
+    };
+}
+
+// Example 2: Focus trap for modal
+pub fn view(ctx: *AppContext, model: Model) Element(Msg) {
+    return if (model.show_modal)
+        h.div(ctx, Msg, .{
+            .id = "modal-container",
+            .class = "modal",
+            .role = "dialog",
+            .ariaModal = true,
+        }, &.{
+            h.h2(ctx, Msg, .{}, &.{h.text(ctx, Msg, "Modal Title")}),
+            h.button(ctx, Msg, .{
+                .onClick = .close_modal,
+            }, &.{h.text(ctx, Msg, "Close")}),
+        })
+    else
+        h.none(ctx, Msg);
+}
+
+pub fn update(model: *Model, msg: Msg, ctx: *AppContext) Effect(Msg) {
+    return switch (msg) {
+        .modal_opened => {
+            model.show_modal = true;
+            // Install focus trap
+            const modal_id = 1234; // Element ID from registry
+            return Effect.focus(.{ .trap = modal_id });
+        },
+
+        .close_modal => {
+            model.show_modal = false;
+            // Remove focus trap and restore focus
+            return Effect.batch(Msg, &.{
+                Effect.focus(.untrap),
+                Effect.focus(.restore),
+            });
+        },
+
+        // ... other cases
+    };
+}
+
+// Example 3: Keyboard navigation
+pub fn update(model: *Model, msg: Msg, ctx: *AppContext) Effect(Msg) {
+    return switch (msg) {
+        .key_down => |key| {
+            if (std.mem.eql(u8, key, "ArrowDown")) {
+                return Effect.focus(.next);
+            } else if (std.mem.eql(u8, key, "ArrowUp")) {
+                return Effect.focus(.previous);
+            }
+            return Effect.none(Msg);
+        },
+
+        // ... other cases
+    };
+}
+
+// Example 4: Save/restore focus for dropdown
+pub const Model = struct {
+    dropdown_open: bool,
+    dropdown_trigger_id: u32,
+};
+
+pub fn update(model: *Model, msg: Msg, ctx: *AppContext) Effect(Msg) {
+    return switch (msg) {
+        .toggle_dropdown => {
+            if (model.dropdown_open) {
+                // Closing - restore focus to trigger
+                model.dropdown_open = false;
+                return Effect.focus(.restore);
+            } else {
+                // Opening - save focus and focus first item
+                model.dropdown_open = true;
+                return Effect.batch(Msg, &.{
+                    Effect.focus(.save),
+                    Effect.focus(.{ .selector = ".dropdown-item:first-child" }),
+                });
+            }
+        },
+
+        // ... other cases
+    };
+}
+```
+
+---
+
 ## CONCLUSION
 
-The enhanced JS runtime provides superior performance, safety, and developer experience.
+The enhanced JS runtime provides superior performance, safety, and developer experience. Focus management capabilities ensure accessible keyboard navigation and proper focus handling for interactive components like modals, dropdowns, and complex forms.
 
 **Links:**
 - [← Previous: WASM Runtime](13-wasm-runtime.md)

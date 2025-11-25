@@ -688,9 +688,415 @@ pub fn MemoizedComponent(
 
 ---
 
+## ERROR BOUNDARIES
+
+### Error Boundary Element
+
+Error boundaries catch rendering errors and display fallback UI:
+
+```zig
+// Extended Element type with error boundary
+pub fn Element(comptime Msg: type) type {
+    return union(enum) {
+        // ... existing variants ...
+
+        /// Error boundary - catches errors during rendering
+        error_boundary: struct {
+            child: *Element(Msg),
+            fallback: *const fn (ErrorInfo) Element(Msg),
+            on_error: ?fn (ErrorInfo) Msg,
+        },
+    };
+}
+
+/// Error information passed to fallback and error handler
+pub const ErrorInfo = struct {
+    message: []const u8,
+    stack_trace: ?[]const u8,
+    component_name: ?[]const u8,
+};
+```
+
+### Error Boundary Constructor
+
+```zig
+/// Create an error boundary
+pub fn errorBoundary(
+    comptime Msg: type,
+    child: Element(Msg),
+    fallback: *const fn (ErrorInfo) Element(Msg),
+    on_error: ?fn (ErrorInfo) Msg,
+) Element(Msg) {
+    const child_ptr = allocator.create(Element(Msg)) catch @panic("OOM");
+    child_ptr.* = child;
+
+    return .{
+        .error_boundary = .{
+            .child = child_ptr,
+            .fallback = fallback,
+            .on_error = on_error,
+        },
+    };
+}
+```
+
+### Error Handling in Diffing
+
+```zig
+// Extended diff function with error handling
+pub fn diff(
+    comptime Msg: type,
+    allocator: std.mem.Allocator,
+    old: ?Element(Msg),
+    new: Element(Msg),
+    node_id: u32,
+) ![]Patch(Msg) {
+    var patches = std.ArrayList(Patch(Msg)).init(allocator);
+
+    // ... existing diff logic ...
+
+    // Handle error boundaries
+    switch (new) {
+        .error_boundary => |boundary| {
+            // Try to render child, catch errors
+            const child_result = diffWithErrorHandling(
+                Msg,
+                allocator,
+                if (old) |o| switch (o) {
+                    .error_boundary => |ob| ob.child.*,
+                    else => o,
+                } else null,
+                boundary.child.*,
+                node_id,
+            ) catch |err| {
+                // Error occurred, use fallback
+                const error_info = ErrorInfo{
+                    .message = @errorName(err),
+                    .stack_trace = null,
+                    .component_name = null,
+                };
+
+                // Dispatch error message if provided
+                if (boundary.on_error) |handler| {
+                    const error_msg = handler(error_info);
+                    // Queue message for dispatch
+                }
+
+                // Render fallback UI
+                const fallback_element = boundary.fallback(error_info);
+                return try diff(Msg, allocator, old, fallback_element, node_id);
+            };
+
+            try patches.appendSlice(child_result);
+        },
+
+        // ... rest of existing cases ...
+    }
+
+    return patches.toOwnedSlice();
+}
+
+/// Diff with error boundary protection
+fn diffWithErrorHandling(
+    comptime Msg: type,
+    allocator: std.mem.Allocator,
+    old: ?Element(Msg),
+    new: Element(Msg),
+    node_id: u32,
+) ![]Patch(Msg) {
+    // Call regular diff, errors bubble up to error boundary
+    return diff(Msg, allocator, old, new, node_id);
+}
+```
+
+### Error Boundary Helpers
+
+```zig
+// src/vdom/error_boundary.zig
+const std = @import("std");
+const Element = @import("element.zig").Element;
+const ErrorInfo = @import("element.zig").ErrorInfo;
+
+pub const ErrorBoundary = struct {
+    /// Simple error boundary with default fallback
+    pub fn simple(
+        comptime Msg: type,
+        child: Element(Msg),
+    ) Element(Msg) {
+        return Element(Msg).errorBoundary(
+            child,
+            defaultFallback,
+            null,
+        );
+    }
+
+    /// Error boundary with custom fallback
+    pub fn withFallback(
+        comptime Msg: type,
+        child: Element(Msg),
+        fallback: *const fn (ErrorInfo) Element(Msg),
+    ) Element(Msg) {
+        return Element(Msg).errorBoundary(
+            child,
+            fallback,
+            null,
+        );
+    }
+
+    /// Error boundary with error handler
+    pub fn withHandler(
+        comptime Msg: type,
+        child: Element(Msg),
+        fallback: *const fn (ErrorInfo) Element(Msg),
+        on_error: fn (ErrorInfo) Msg,
+    ) Element(Msg) {
+        return Element(Msg).errorBoundary(
+            child,
+            fallback,
+            on_error,
+        );
+    }
+
+    /// Default fallback UI
+    fn defaultFallback(error_info: ErrorInfo) Element(Msg) {
+        return h.div(ctx, Msg, .{
+            .class = "error-boundary",
+            .role = "alert",
+        }, &.{
+            h.h2(ctx, Msg, .{}, &.{
+                h.text(ctx, Msg, "Something went wrong"),
+            }),
+            h.p(ctx, Msg, .{}, &.{
+                h.text(ctx, Msg, error_info.message),
+            }),
+        });
+    }
+};
+```
+
+### Error Boundary Usage Examples
+
+```zig
+// Example 1: Simple error boundary
+pub fn view(ctx: *AppContext, model: Model) Element(Msg) {
+    return h.div(ctx, Msg, .{}, &.{
+        h.h1(ctx, Msg, .{}, &.{h.text(ctx, Msg, "My App")}),
+
+        // Wrap potentially failing component
+        ErrorBoundary.simple(Msg, DangerousComponent(ctx, model)),
+
+        h.footer(ctx, Msg, .{}, &.{h.text(ctx, Msg, "Footer")}),
+    });
+}
+
+// Example 2: Custom fallback UI
+pub fn view(ctx: *AppContext, model: Model) Element(Msg) {
+    return ErrorBoundary.withFallback(
+        Msg,
+        UserProfile(ctx, model.user_id),
+        customErrorFallback,
+    );
+}
+
+fn customErrorFallback(error_info: ErrorInfo) Element(Msg) {
+    return h.div(ctx, Msg, .{ .class = "error-card" }, &.{
+        h.h3(ctx, Msg, .{}, &.{h.text(ctx, Msg, "Failed to load profile")}),
+        h.p(ctx, Msg, .{}, &.{h.text(ctx, Msg, "Please try again later.")}),
+        h.button(ctx, Msg, .{
+            .onClick = .retry_profile,
+        }, &.{
+            h.text(ctx, Msg, "Retry"),
+        }),
+    });
+}
+
+// Example 3: Error boundary with logging
+pub fn view(ctx: *AppContext, model: Model) Element(Msg) {
+    return ErrorBoundary.withHandler(
+        Msg,
+        ComplexFeature(ctx, model),
+        errorFallback,
+        handleError,
+    );
+}
+
+fn handleError(error_info: ErrorInfo) Msg {
+    // Log error to monitoring service
+    return .{ .log_error = error_info };
+}
+
+// Example 4: Multiple error boundaries for different sections
+pub fn view(ctx: *AppContext, model: Model) Element(Msg) {
+    return h.div(ctx, Msg, .{}, &.{
+        // Navigation errors don't crash the whole app
+        ErrorBoundary.simple(Msg, Navigation(ctx, model)),
+
+        // Main content has its own boundary
+        ErrorBoundary.withFallback(
+            Msg,
+            MainContent(ctx, model),
+            mainContentFallback,
+        ),
+
+        // Sidebar has its own boundary
+        ErrorBoundary.simple(Msg, Sidebar(ctx, model)),
+    });
+}
+
+// Example 5: Error boundary with recovery
+pub const Model = struct {
+    has_error: bool,
+    error_info: ?ErrorInfo,
+    // ... other fields
+};
+
+pub const Msg = union(enum) {
+    render_error: ErrorInfo,
+    clear_error,
+    retry,
+    // ... other messages
+};
+
+pub fn update(model: *Model, msg: Msg, ctx: *AppContext) Effect(Msg) {
+    return switch (msg) {
+        .render_error => |info| {
+            model.has_error = true;
+            model.error_info = info;
+            // Log to monitoring service
+            return Effect.log(Msg, "Render error: {s}", .{info.message});
+        },
+
+        .clear_error => {
+            model.has_error = false;
+            model.error_info = null;
+            return Effect.none(Msg);
+        },
+
+        .retry => {
+            model.has_error = false;
+            model.error_info = null;
+            // Trigger re-render
+            return Effect.none(Msg);
+        },
+
+        // ... other cases
+    };
+}
+
+pub fn view(ctx: *AppContext, model: Model) Element(Msg) {
+    return ErrorBoundary.withHandler(
+        Msg,
+        FeatureComponent(ctx, model),
+        |error_info| {
+            return h.div(ctx, Msg, .{ .class = "error-recovery" }, &.{
+                h.h3(ctx, Msg, .{}, &.{h.text(ctx, Msg, "Error occurred")}),
+                h.p(ctx, Msg, .{}, &.{h.text(ctx, Msg, error_info.message)}),
+                h.button(ctx, Msg, .{
+                    .onClick = .retry,
+                }, &.{
+                    h.text(ctx, Msg, "Try Again"),
+                }),
+                h.button(ctx, Msg, .{
+                    .onClick = .clear_error,
+                }, &.{
+                    h.text(ctx, Msg, "Dismiss"),
+                }),
+            });
+        },
+        |error_info| .{ .render_error = error_info },
+    );
+}
+```
+
+### Error Boundary in Component Hierarchies
+
+```zig
+// Example: Error boundaries at different levels
+pub fn App(ctx: *AppContext, model: Model) Element(Msg) {
+    // Root-level error boundary - catches catastrophic errors
+    return ErrorBoundary.withHandler(
+        Msg,
+        AppContent(ctx, model),
+        rootErrorFallback,
+        |err| .{ .catastrophic_error = err },
+    );
+}
+
+fn AppContent(ctx: *AppContext, model: Model) Element(Msg) {
+    return h.div(ctx, Msg, .{ .class = "app" }, &.{
+        // Header errors don't crash the app
+        ErrorBoundary.simple(Msg, Header(ctx, model)),
+
+        h.main(ctx, Msg, .{}, &.{
+            // Each route has its own error boundary
+            switch (model.current_route) {
+                .home => ErrorBoundary.simple(Msg, HomePage(ctx, model)),
+                .profile => ErrorBoundary.withFallback(
+                    Msg,
+                    ProfilePage(ctx, model),
+                    profileErrorFallback,
+                ),
+                .settings => ErrorBoundary.simple(Msg, SettingsPage(ctx, model)),
+            },
+        }),
+
+        ErrorBoundary.simple(Msg, Footer(ctx, model)),
+    });
+}
+
+fn rootErrorFallback(error_info: ErrorInfo) Element(Msg) {
+    return h.div(ctx, Msg, .{
+        .class = "catastrophic-error",
+    }, &.{
+        h.h1(ctx, Msg, .{}, &.{h.text(ctx, Msg, "Application Error")}),
+        h.p(ctx, Msg, .{}, &.{
+            h.text(ctx, Msg, "The application encountered a critical error."),
+        }),
+        h.button(ctx, Msg, .{
+            .onClick = .reload_app,
+        }, &.{
+            h.text(ctx, Msg, "Reload Application"),
+        }),
+    });
+}
+```
+
+### Integration with Effects System
+
+```zig
+// Error boundaries can also trigger effects for logging/monitoring
+pub fn Effect(comptime Msg: type) type {
+    return union(enum) {
+        // ... existing effects ...
+
+        /// Log error to monitoring service
+        log_error: struct {
+            error_info: ErrorInfo,
+            on_complete: ?Msg,
+        },
+    };
+}
+
+// Usage in update function
+pub fn update(model: *Model, msg: Msg, ctx: *AppContext) Effect(Msg) {
+    return switch (msg) {
+        .render_error => |error_info| {
+            // Log to Sentry, DataDog, etc.
+            return Effect.batch(Msg, &.{
+                Effect.logError(error_info, null),
+                Effect.none(Msg),
+            });
+        },
+        // ... other cases
+    };
+}
+```
+
+---
+
 ## CONCLUSION
 
-ZUI's Virtual DOM provides efficient DOM updates through O(n) diffing and intelligent reconciliation. It supports keys for lists, lazy evaluation, and message mapping for component composition.
+ZUI's Virtual DOM provides efficient DOM updates through O(n) diffing and intelligent reconciliation. It supports keys for lists, lazy evaluation, message mapping for component composition, and error boundaries for graceful error handling and recovery. Error boundaries prevent render errors from cascading through the application, providing isolated failure domains and better user experience.
 
 **Links:**
 - [← Previous: Context System](02-context-system.md)
