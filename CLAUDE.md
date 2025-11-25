@@ -17,6 +17,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Documentation Structure**:
 - Plans must be placed in the `plans/` directory
 - Specifications must be placed in the `spec/` directory
+  - The `spec/` folder contains 18 detailed specification documents (00-overview.md through 17-tests.md)
+  - See [README.md](README.md) for the complete specifications index
+  - See [PROJECT-STATUS.md](PROJECT-STATUS.md) for current project status
+
+## Current Project Phase
+
+**SPECIFICATION PHASE ONLY**
+
+Until further notice, the project is in the specification phase. This means:
+
+1. **DO NOT** begin full code implementation
+2. **FOCUS ON** refining and completing the specification documents in `spec/`
+3. **CODE EXAMPLES** in specifications are allowed and encouraged where they help clarify the design
+4. **IMPLEMENTATION GUIDES** within spec documents are acceptable to illustrate how components should work
+
+The goal is to have complete, well-thought-out specifications before starting the implementation phase. All specification work should be done in the `spec/` directory.
 
 ## Build Commands
 
