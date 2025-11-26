@@ -80,3 +80,24 @@ The build system creates two separate test executables:
 - One for the executable module (`exe_tests`)
 
 Both test suites run in parallel when you execute `zig build test`.
+
+## Ongoing Work (TODO: Remove when complete)
+
+**Architectural Analysis in Progress**
+
+We are reviewing and debating the critical problems identified in `ARCHITECTURAL-ANALYSIS.md`.
+
+**Current status:**
+- ✅ 1.1 Memory Corruption (VDOM Diffing) - RESOLVED
+- ✅ 1.2 Circular Dependencies (Context) - FALSE POSITIVE
+- ✅ 1.3 SSR Adopt Fragility - RESOLVED
+- ✅ 1.4 CSS Dynamic Composition - RESOLVED
+- ⏳ **1.5 WASM Target Incompatibility - PENDING**
+
+**Next session:** Continue discussion on problem 1.5 (WASM Target Incompatibility). The analysis and options are documented in the file. Key questions to resolve:
+1. How much code really needs to be platform-specific?
+2. Is the Cmd/Effects system sufficient abstraction?
+3. How to handle server-only features?
+4. Should there be a `ServerCmd` extending `Cmd`?
+
+**NOTE TO SELF**: Remove this entire "Ongoing Work" section once the architectural analysis is complete and all decisions are finalized in `ARCHITECTURAL-ANALYSIS.md`.

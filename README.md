@@ -136,6 +136,22 @@ Zui v6 represents a complete architectural revision with:
 | [20-browser-apis.md](spec/20-browser-apis.md) | Browser API integration (storage, crypto, clipboard, etc.) |
 | [21-tailwind-integration.md](spec/21-tailwind-integration.md) | Type-safe Tailwind CSS integration |
 
+### Advanced Features
+
+| Document | Description |
+|-----------|-------------|
+| [22-suspense.md](spec/22-suspense.md) | Async data loading with Suspense boundaries |
+| [23-portals.md](spec/23-portals.md) | Out-of-tree rendering for modals, tooltips, dropdowns |
+| [24-head-management.md](spec/24-head-management.md) | Dynamic document head (Title, Meta, Link) |
+| [25-transitions.md](spec/25-transitions.md) | CSS transitions, animations, View Transitions API |
+| [26-slots.md](spec/26-slots.md) | Named slots for component composition |
+
+### Platform Integration
+
+| Document | Description |
+|-----------|-------------|
+| [27-spin-sdk.md](spec/27-spin-sdk.md) | Native Zig SDK for Fermyon Spin |
+
 ### Examples and Testing
 
 | Document | Description |
